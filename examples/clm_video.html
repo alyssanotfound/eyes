@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<title>Face tracker</title>
+		<meta charset="utf-8">
+		<link href="./styles/bootstrap.min.css" rel="stylesheet" type="text/css">
+		<style>
+			@import url(https://fonts.googleapis.com/css?family=Lato:300italic,700italic,300,700);
+			
+			body {
+				font-family: 'Lato';
+				background-color: #f0f0f0;
+				margin: 0px auto;
+				max-width: 1150px;
+			}
+			
+			#overlay {
+				position: absolute;
+				top: 0px;
+				left: 0px;
+				-o-transform : scaleX(-1);
+				-webkit-transform : scaleX(-1);
+				transform : scaleX(-1);
+				-ms-filter : fliph; /*IE*/
+				filter : fliph; /*IE*/
+			}
+
+			#videoel {
+				-o-transform : scaleX(-1);
+				-webkit-transform : scaleX(-1);
+				transform : scaleX(-1);
+				-ms-filter : fliph; /*IE*/
+				filter : fliph; /*IE*/
+			}
+			
+			#container {
+				position : relative;
+				width : 900px;
+				margin : 0px auto;
+			}
+			
+			#content {
+				margin-top : 20px;
+				margin-left : 100px;
+				margin-right : 100px;
+				max-width: 950px;
+			}
+			
+			#sketch {
+				display: block;
+			}
+			
+			#filter {
+				display: none;
+			}
+			
+			h2 {
+				font-weight : 400;
+			}
+
+			.nogum {
+				display : none;
+			}
+			
+			.btn {
+				font-family: 'Lato';
+				font-size: 16px;
+			}
+
+			.hide {
+				display : none;
+			}
+
+			.nohide {
+				display : block;
+			}
+			.target {
+        		mask: url("#c1");	
+      		}
+		</style>
+		<script type="text/javascript">
+
+			var _gaq = _gaq || [];
+			_gaq.push(['_setAccount', 'UA-32642923-1']);
+			_gaq.push(['_trackPageview']);
+
+			(function() {
+				var ga = document.createElement('script'); ga.type = 'text/javascript'; ga.async = true;
+				ga.src = ('https:' == document.location.protocol ? 'https://ssl' : 'http://www') + '.google-analytics.com/ga.js';
+				var s = document.getElementsByTagName('script')[0]; s.parentNode.insertBefore(ga, s);
+			})();
+
+		</script>
+	</head>
+
+	<body>
+		<script src="./ext_js/utils.js"></script>
+		<script src="./ext_js/jsfeat-min.js"></script>
+		<script src="./ext_js/frontalface.js"></script>
+		<script src="./ext_js/jsfeat_detect.js"></script>
+		<script src="./ext_js/numeric-1.2.6.min.js"></script>
+		<script src="./ext_js/mosse.js"></script>
+		<script src="./ext_js/left_eye_filter.js"></script>
+		<script src="./ext_js/right_eye_filter.js"></script>
+		<script src="./ext_js/nose_filter.js"></script>
+		<script src="../models/model_pca_20_svm.js"></script>
+		<script src="../js/clm.js"></script>
+		<script src="../js/svmfilter_webgl.js"></script>
+		<script src="../js/svmfilter_fft.js"></script>
+		<script src="../js/mossefilter.js"></script>
+		<script src="./ext_js/Stats.js"></script>
+		<div id="content">
+			<input class="btn" type="button" value="wait, loading video" disabled="disabled" onclick="startVideo()" id="startbutton"></input>
+			<br/>
+			<div id="container">
+				<video id="videoel" class="target" width="900" height="675" preload="auto" loop>
+					<!--<video id="videoel" width="320" height="240" preload="auto">-->
+					<!--<source src="./media/franck.ogv" type="video/ogg"/>-->
+				</video>
+				<canvas id="overlay" width="900" height="675"></canvas>
+				<!--<canvas id="sketch" width="400" height="300"></canvas>-->
+			</div>
+			
+			<script>
+				var vid = document.getElementById('videoel');
+				var overlay = document.getElementById('overlay');
+				var overlayCC = overlay.getContext('2d');
+				var eyeCoords = new Array;
+				var updatePath = "";
+				var ctrack = new clm.tracker({useWebGL : true});
+				ctrack.init(pModel);
+				
+				stats = new Stats();
+				stats.domElement.style.position = 'absolute';
+				stats.domElement.style.top = '0px';
+				document.getElementById('container').appendChild( stats.domElement );
+				
+				function enablestart() {
+					var startbutton = document.getElementById('startbutton');
+					startbutton.value = "start";
+					startbutton.disabled = null;
+				}
+				
+				var insertAltVideo = function(video) {
+					if (supports_video()) {
+						if (supports_ogg_theora_video()) {
+							video.src = "./media/cap12_edit.ogv";
+						} else if (supports_h264_baseline_video()) {
+							video.src = "./media/cap12_edit.mp4";
+						} else {
+							return false;
+						}
+						//video.play();
+						return true;
+					} else return false;
+				}
+				navigator.getUserMedia = navigator.getUserMedia || navigator.webkitGetUserMedia || navigator.mozGetUserMedia || navigator.msGetUserMedia;
+				window.URL = window.URL || window.webkitURL || window.msURL || window.mozURL;
+
+				// check for camerasupport
+				if (navigator.getUserMedia) {
+					// set up stream
+					
+					var videoSelector = {video : true};
+					if (window.navigator.appVersion.match(/Chrome\/(.*?) /)) {
+						var chromeVersion = parseInt(window.navigator.appVersion.match(/Chrome\/(\d+)\./)[1], 10);
+						if (chromeVersion < 20) {
+							videoSelector = "video";
+						}
+					};
+				
+					navigator.getUserMedia(videoSelector, function( stream ) {
+						if (vid.mozCaptureStream) {
+							vid.mozSrcObject = stream;
+						} else {
+							vid.src = (window.URL && window.URL.createObjectURL(stream)) || stream;
+						}
+						vid.play();
+					}, function() {
+						insertAltVideo(vid);
+						document.getElementById('gum').className = "hide";
+						document.getElementById('nogum').className = "nohide";
+						alert("There was some problem trying to fetch video from your webcam, using a fallback video instead.");
+					});
+				} else {
+					insertAltVideo(vid);
+					document.getElementById('gum').className = "hide";
+					document.getElementById('nogum').className = "nohide";
+					alert("Your browser does not seem to support getUserMedia, using a fallback video instead.");
+				}
+
+				vid.addEventListener('canplay', enablestart, false);
+				
+				function startVideo() {
+					// start video
+					vid.play();
+					// start tracking
+					ctrack.start(vid);
+					// start loop to draw face
+					drawLoop();
+				}
+				
+				function drawLoop() {
+					requestAnimFrame(drawLoop);
+					overlayCC.clearRect(0, 0, 900, 675);
+					var positions = ctrack.getCurrentPosition();
+					//eyeCoords = [];
+					//eyeCoords.push(positions[23],positions[63],positions[24],positions[64],positions[25],positions[65],positions[26],positions[66]);
+					//updatePath = "M" + positions[23][0] + "," + positions[23][1] + " ";
+					//for (i = 1; i < eyeCoords.length; i++){
+					//	updatePath = updatePath.concat("L" + positions[i][0] + "," + positions[i][1] + " ");
+					//}
+					//updatePath = updatePath.concat("Z");
+					var lefteye = document.getElementById('leftmask');
+					var righteye = document.getElementById('rightmask');
+					//x values are 1 - val because x 0 origin is top right
+					var newlcx = (1 - (positions[27][0]/675)).toFixed(3);
+					var newlcy = (positions[27][1]/900).toFixed(3);
+					var newrcx = (1 - (positions[32][0]/675)).toFixed(3);
+					var newrcy = (positions[32][1]/900).toFixed(3);
+					lefteye.setAttribute('cx', newlcx);
+					lefteye.setAttribute('cy', newlcy);
+					righteye.setAttribute('cx', newrcx);
+					righteye.setAttribute('cy', newrcy);
+					//console.log(getCurrentParameters());
+					//console.log(newlcx + ", " + newlcy);
+					//console.log(newrcx + ", " + newrcy);
+					//psrElement.innerHTML = "score :" + ctrack.getScore().toFixed(4);
+					if (ctrack.getCurrentPosition()) {
+
+						ctrack.draw(overlay);
+
+					}
+				}
+
+				// update stats on every iteration
+				document.addEventListener('clmtrackrIteration', function(event) {
+					stats.update();
+				}, false);
+
+				
+
+
+			</script>
+		</div>
+		<svg version="1.1" xmlns="http://www.w3.org/2000/svg">
+	      <defs>
+	        <mask id="c1" maskUnits="objectBoundingBox" maskContentUnits="objectBoundingBox">
+          		<circle id="leftmask" cx="0.5" cy="0.5" r="0.05" fill="white"/>
+          		<circle id="rightmask" cx="0.40" cy="0.5" r="0.05" fill="white"/>
+        	</mask>
+	      </defs>
+	    </svg>
+	</body>
+</html>
